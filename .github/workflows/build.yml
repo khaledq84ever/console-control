@@ -42,11 +42,13 @@ jobs:
         shell: pwsh
         run: |
           python main.py --list
-          if ($LASTEXITCODE -ne 1) {
-            Write-Error "expected exit code 1 (no controller found), got $LASTEXITCODE"
+          $code = $LASTEXITCODE
+          if ($code -ne 1) {
+            Write-Error "expected exit code 1 (no controller found), got $code"
             exit 1
           }
           Write-Host "--list correctly reported no controller (exit 1) without crashing"
+          exit 0
 
       - name: Build exe with PyInstaller
         run: pyinstaller --onefile --console --name ConsoleControl main.py
@@ -56,11 +58,13 @@ jobs:
         run: |
           $out = & "dist\ConsoleControl.exe" --list 2>&1
           Write-Host $out
-          if ($LASTEXITCODE -ne 1) {
-            Write-Error "expected exe --list to exit 1 (no controller), got $LASTEXITCODE"
+          $code = $LASTEXITCODE
+          if ($code -ne 1) {
+            Write-Error "expected exe --list to exit 1 (no controller), got $code"
             exit 1
           }
           Write-Host "exe smoke test passed"
+          exit 0
 
       - uses: actions/upload-artifact@v4
         with:
