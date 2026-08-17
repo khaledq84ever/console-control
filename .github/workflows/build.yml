@@ -38,6 +38,9 @@ jobs:
       - name: Unit test controller_parsers.py (pure byte math, no hardware needed)
         run: python tests/test_parsers.py
 
+      - name: End-to-end pipeline test (fake HID device + fake ViGEmBus pad)
+        run: python tests/test_e2e.py
+
       - name: Smoke-test --list on a runner with no controller attached
         shell: pwsh
         run: |
