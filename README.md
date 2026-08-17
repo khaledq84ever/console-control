@@ -11,7 +11,7 @@ sidesteps games that don't natively support PlayStation pads.
 ## Quick start (Windows)
 
 1. **Run setup once**: double-click `install_setup.bat`. It installs
-   [ViGEmBus](https://github.com/ViGEm/ViGEmBus) (required — the official
+   [ViGEmBus](https://github.com/nefarius/ViGEmBus) (required — the official
    signed installer, you'll get the normal Windows driver-install
    confirmation prompt), and offers to install the latest .NET Desktop
    Runtime too (optional — ConsoleControl.exe itself doesn't need .NET,
