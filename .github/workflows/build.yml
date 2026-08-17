@@ -1,0 +1,53 @@
+name: Build Windows exe
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Unit test controller_parsers.py (pure byte math, no hardware needed)
+        run: python tests/test_parsers.py
+
+      - name: Smoke-test --list on a runner with no controller attached
+        shell: pwsh
+        run: |
+          python main.py --list
+          if ($LASTEXITCODE -ne 1) {
+            Write-Error "expected exit code 1 (no controller found), got $LASTEXITCODE"
+            exit 1
+          }
+          Write-Host "--list correctly reported no controller (exit 1) without crashing"
+
+      - name: Build exe with PyInstaller
+        run: pyinstaller --onefile --console --name ConsoleControl main.py
+
+      - name: Smoke-test the built exe launches and reports cleanly with no controller
+        shell: pwsh
+        run: |
+          $out = & "dist\ConsoleControl.exe" --list 2>&1
+          Write-Host $out
+          if ($LASTEXITCODE -ne 1) {
+            Write-Error "expected exe --list to exit 1 (no controller), got $LASTEXITCODE"
+            exit 1
+          }
+          Write-Host "exe smoke test passed"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ConsoleControl-windows-exe
+          path: dist/ConsoleControl.exe
