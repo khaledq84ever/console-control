@@ -10,10 +10,12 @@ sidesteps games that don't natively support PlayStation pads.
 
 ## Quick start (Windows)
 
-1. **Install ViGEmBus once**: double-click `install_vigembus.bat`
-   (downloads the official signed installer from the
-   [ViGEmBus project](https://github.com/ViGEm/ViGEmBus) and runs it — you'll
-   get the normal Windows driver-install confirmation prompt).
+1. **Run setup once**: double-click `install_setup.bat`. It installs
+   [ViGEmBus](https://github.com/ViGEm/ViGEmBus) (required — the official
+   signed installer, you'll get the normal Windows driver-install
+   confirmation prompt), and offers to install the latest .NET Desktop
+   Runtime too (optional — ConsoleControl.exe itself doesn't need .NET,
+   this is only in case something else on your machine does).
 2. **Connect your controller**:
    - USB: plug the cable in.
    - Bluetooth: pair it first in Windows Settings → Bluetooth & devices
@@ -21,11 +23,6 @@ sidesteps games that don't natively support PlayStation pads.
      Windows does.
 3. Run `ConsoleControl.exe`. It auto-detects the controller and says
    **"Ready!"** — that's it, open any game.
-
-**Optional:** `install_dotnet.bat` installs the latest .NET Desktop Runtime.
-ConsoleControl.exe itself doesn't need it (it's plain Python/PyInstaller,
-no .NET dependency) — only run this if something else on your machine
-requires .NET.
 
 ## Building the .exe
 
@@ -80,5 +77,5 @@ only real hardware can do that.
 - `hid_reader.py` — finds/opens the controller via HID, handles the PS3 USB "wake up" quirk
 - `virtual_pad.py` — maps parsed state onto a ViGEmBus virtual Xbox 360 pad
 - `main.py` — the console app tying it together
-- `install_vigembus.bat` — one-time driver setup
+- `install_setup.bat` — one-time setup (ViGEmBus + optional .NET)
 - `build_exe.bat` — packaging

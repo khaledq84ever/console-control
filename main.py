@@ -81,7 +81,7 @@ def run_virtual_pad(name, gen, info):
     except Exception as exc:
         print("\nCouldn't create the virtual Xbox controller.")
         print("This almost always means ViGEmBus isn't installed yet.")
-        print("Run install_vigembus.bat (in this folder), then try again.")
+        print("Run install_setup.bat (in this folder), then try again.")
         print(f"(details: {exc})")
         return 1
 
