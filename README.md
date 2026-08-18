@@ -50,24 +50,27 @@ Note: `vgamepad` (the ViGEmBus client) only works on Windows — `--list` and
 
 | Controller | Transport | Confidence |
 |---|---|---|
-| DualSense (PS5) | USB — high; Bluetooth — lower, see note below | Medium-High |
-| DualSense Edge (PS5) | USB — high; Bluetooth — lower, see note below | Medium-High |
+| DualSense (PS5) | USB — confirmed on real hardware; Bluetooth — unverified, see note | High (USB) |
+| DualSense Edge (PS5) | USB + Bluetooth (same parser as DualSense) | Medium-High |
 | DualShock 4 (PS4), both hardware revisions | USB + Bluetooth | High |
 | DualShock 3 (PS3) | USB + Bluetooth | Lower — see note below |
 
 **Honesty note:** the byte offsets used to decode each controller's HID
 reports come from public, community-documented specs (the same ones used by
 projects like DS4Windows, pydualsense, and the Linux kernel's `hid-sony`/
-`hid-playstation` drivers) — this was built without a real PS controller
-attached to test against. DS3 in particular has the least consistent
-documentation across sources. DS5's USB layout was initially (incorrectly)
-assumed to mirror DS4's byte-for-byte; it doesn't — DualSense inserts the
-analog L2/R2 trigger bytes and a sequence byte between the sticks and the
-buttons, which mis-decoded every DS5 button and trigger until fixed (see
-`controller_parsers.py`'s `parse_ds5` docstring and git history). The DS5
-Bluetooth *base* offset still reuses DS4's assumption and has not been
-independently confirmed. If a button or stick reads wrong on your actual
-controller:
+`hid-playstation` drivers) — most of this was built without a real PS
+controller attached to test against. DS3 in particular has the least
+consistent documentation across sources. DS5's USB layout was initially
+(incorrectly) assumed to mirror DS4's byte-for-byte; it doesn't — DualSense
+inserts the analog L2/R2 trigger bytes and a sequence byte between the
+sticks and the buttons, which mis-decoded every DS5 button and trigger
+until fixed (see `controller_parsers.py`'s `parse_ds5` docstring and git
+history). **That fix has since been confirmed against a real DualSense over
+USB** via `main.py --raw`: the sequence byte increments exactly as
+predicted, the trigger bytes read 0 at rest, and the button bytes decode
+correctly with nothing pressed. The DS5 Bluetooth *base* offset still
+reuses DS4's assumption and remains unverified. If a button or stick reads
+wrong on your actual controller:
 
 ```
 ConsoleControl.exe --raw
