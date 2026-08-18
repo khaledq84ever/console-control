@@ -193,5 +193,24 @@ def main() -> int:
     return run_virtual_pad(name, gen, info)
 
 
+def cli_main() -> int:
+    """Wraps main() with a last-resort safety net: hid_reader.read_loop only
+    wraps dev.read() in try/except, not the on_report callback it invokes
+    (see read_loop's docstring/source) - so anything raised from deeper in
+    the pipeline (e.g. a vgamepad/ViGEmBus hiccup from pad.update(), not the
+    ValueError already caught for short/garbage reports) would otherwise
+    crash the packaged .exe with a raw traceback instead of a message a
+    non-technical user can act on."""
+    try:
+        return main()
+    except KeyboardInterrupt:
+        return 0
+    except Exception as exc:
+        print(f"\nSomething went wrong: {exc}", file=sys.stderr)
+        print("Try unplugging/replugging the controller and running again.", file=sys.stderr)
+        print("If it keeps happening, please open an issue with this message.", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli_main())

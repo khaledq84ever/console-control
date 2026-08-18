@@ -214,13 +214,43 @@ def test_garbage_short_report_skipped_not_crashed():
     assert "A" in pressed, "should still process the valid report after skipping the garbage one"
 
 
+def test_cli_main_catches_unexpected_exceptions_from_main(capsys):
+    """Regression test: hid_reader.read_loop only wraps dev.read() in
+    try/except, not the on_report callback (parser -> pad.update()), so an
+    unexpected exception there used to propagate all the way out of
+    __main__ as a raw traceback in the packaged .exe. cli_main() must catch
+    it, print something actionable, and return a non-zero exit code instead
+    of raising."""
+    orig_main = main.main
+    main.main = MagicMock(side_effect=RuntimeError("simulated vgamepad hiccup"))
+    try:
+        code = main.cli_main()
+    finally:
+        main.main = orig_main
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "simulated vgamepad hiccup" in err
+
+
+def test_cli_main_returns_zero_on_keyboard_interrupt():
+    orig_main = main.main
+    main.main = MagicMock(side_effect=KeyboardInterrupt)
+    try:
+        code = main.cli_main()
+    finally:
+        main.main = orig_main
+
+    assert code == 0
+
+
 if __name__ == "__main__":
     import io
     import contextlib
 
     class _FakeCapsys:
         def readouterr(self):
-            return types.SimpleNamespace(out=self._buf.getvalue())
+            return types.SimpleNamespace(out=self._out.getvalue(), err=self._err.getvalue())
 
     fails = 0
     tests = [(k, v) for k, v in sorted(globals().items()) if k.startswith("test_")]
@@ -228,9 +258,10 @@ if __name__ == "__main__":
         buf = io.StringIO()
         try:
             if "capsys" in t.__code__.co_varnames[:t.__code__.co_argcount]:
+                errbuf = io.StringIO()
                 fc = _FakeCapsys()
-                fc._buf = buf
-                with contextlib.redirect_stdout(buf):
+                fc._out, fc._err = buf, errbuf
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(errbuf):
                     t(fc)
             else:
                 with contextlib.redirect_stdout(buf):
