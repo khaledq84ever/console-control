@@ -214,6 +214,70 @@ def test_garbage_short_report_skipped_not_crashed():
     assert "A" in pressed, "should still process the valid report after skipping the garbage one"
 
 
+class _DeadDevice:
+    """Simulates an unplugged/out-of-Bluetooth-range controller: every
+    read() fails and never recovers, the way a real dead HID handle does."""
+
+    def __init__(self):
+        self.closed = False
+
+    def read(self, size, timeout_ms=200):
+        raise OSError("device is gone")
+
+    def close(self):
+        self.closed = True
+
+
+def test_run_virtual_pad_reconnects_after_disconnect():
+    """Regression test for hid_reader.read_loop's documented contract
+    ("reconnection/backoff is the caller's job") actually being honored:
+    when the device handle dies for good, run_virtual_pad must reopen a
+    fresh one via hid_reader.list_controllers()/open_controller() and keep
+    going, not spin forever on the dead handle."""
+    dead_dev = _DeadDevice()
+    good_dev = FakeHidDevice([_ds4_report(cross=True)])
+    info = {"path": b"/fake"}
+
+    fake_gamepad = MagicMock()
+    fake_vg_module = types.SimpleNamespace(
+        VX360Gamepad=lambda: fake_gamepad,
+        XUSB_BUTTON=types.SimpleNamespace(
+            XUSB_GAMEPAD_A="A", XUSB_GAMEPAD_B="B", XUSB_GAMEPAD_X="X", XUSB_GAMEPAD_Y="Y",
+            XUSB_GAMEPAD_LEFT_SHOULDER="LB", XUSB_GAMEPAD_RIGHT_SHOULDER="RB",
+            XUSB_GAMEPAD_BACK="BACK", XUSB_GAMEPAD_START="START",
+            XUSB_GAMEPAD_LEFT_THUMB="L3", XUSB_GAMEPAD_RIGHT_THUMB="R3",
+            XUSB_GAMEPAD_GUIDE="GUIDE",
+            XUSB_GAMEPAD_DPAD_UP="UP", XUSB_GAMEPAD_DPAD_DOWN="DOWN",
+            XUSB_GAMEPAD_DPAD_LEFT="LEFT", XUSB_GAMEPAD_DPAD_RIGHT="RIGHT",
+        ),
+    )
+    sys.modules["vgamepad"] = fake_vg_module
+    sys.modules.pop("virtual_pad", None)
+
+    import hid_reader as hr
+    orig_open = hr.open_controller
+    orig_list = hr.list_controllers
+    orig_sleep = hr.time.sleep
+    devices = iter([dead_dev, good_dev])
+    hr.open_controller = lambda i: next(devices)
+    hr.list_controllers = lambda: [("Reconnected DS4", "ds4", info)]
+    hr.time.sleep = lambda s: None  # skip the real ~12s of retry delays
+    try:
+        result = main.run_virtual_pad("Fake DS4", "ds4", info)
+    finally:
+        hr.open_controller = orig_open
+        hr.list_controllers = orig_list
+        hr.time.sleep = orig_sleep
+        sys.modules.pop("vgamepad", None)
+        sys.modules.pop("virtual_pad", None)
+
+    assert result == 0
+    assert dead_dev.closed, "the dead handle must be closed before reopening a fresh one"
+    assert good_dev.closed
+    pressed = [c.kwargs.get("button") for c in fake_gamepad.press_button.call_args_list]
+    assert "A" in pressed, "should process reports from the reconnected device"
+
+
 def test_run_demo_decodes_every_scripted_frame_with_no_errors(capsys):
     """--demo mode (main.run_demo) needs no real hardware, hidapi, or
     ViGEmBus - it just runs demo_controller.py's scripted reports through

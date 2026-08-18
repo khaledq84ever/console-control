@@ -69,18 +69,31 @@ def enable_ds3(dev) -> None:
         print(f"(DS3 enable report warning, continuing anyway: {exc})", file=sys.stderr)
 
 
-def read_loop(dev, on_report, running_flag, poll_errors_ok=True):
+def read_loop(dev, on_report, running_flag, poll_errors_ok=True, max_consecutive_errors=None):
     """Block, calling on_report(bytes) for every HID report until
-    running_flag() returns False. Reconnection/backoff is the caller's job —
-    this just reads."""
+    running_flag() returns False, or (if max_consecutive_errors is set)
+    dev.read() has failed that many times in a row - which on a real OS
+    means the device handle is dead (unplugged, or a Bluetooth pad gone out
+    of range/asleep) and will never recover no matter how many more times
+    it's retried, even after the physical controller comes back, since a
+    reconnect gets a brand new handle. Opening a fresh handle from a fresh
+    hid.enumerate() is the caller's job — this just reads, and returns
+    (rather than raising) when it gives up, so the caller can tell "gave up,
+    go reconnect" apart from "genuine bug", and retry cleanly from there."""
+    consecutive_errors = 0
     while running_flag():
         try:
             data = dev.read(64, timeout_ms=200)
         except Exception as exc:
             if not poll_errors_ok:
                 raise
-            print(f"read error: {exc}", file=sys.stderr)
+            consecutive_errors += 1
+            print(f"read error ({consecutive_errors}/{max_consecutive_errors or '∞'}): {exc}",
+                  file=sys.stderr)
+            if max_consecutive_errors and consecutive_errors >= max_consecutive_errors:
+                return
             time.sleep(0.5)
             continue
+        consecutive_errors = 0
         if data:
             on_report(bytes(data))

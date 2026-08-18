@@ -177,17 +177,15 @@ def run_virtual_pad(name, gen, info):
         print(f"(details: {exc})")
         return 1
 
-    dev = hid_reader.open_controller(info)
-    if gen == "ds3":
-        hid_reader.enable_ds3(dev)
-
     log_path, log_file = (_open_ds5_report_log() if gen == "ds5" else (None, None))
     if log_path:
         print(f"Logging raw DS5 reports to {log_path} (for verifying the parser)")
     log_report = _make_ds5_logger(log_file) if log_file else None
 
-    parser = PARSERS[gen]
-    running = True
+    # Boxed so on_report always sees the latest generation/parser across a
+    # reconnect below (a replugged/re-paired controller could in principle
+    # be a different PS generation than the one we started with).
+    current = {"parser": PARSERS[gen], "gen": gen}
     last_status_time = [0.0]
 
     def on_report(data: bytes):
@@ -195,8 +193,9 @@ def run_virtual_pad(name, gen, info):
             log_report(data)
         report_id = data[0]
         bt = report_id in BT_REPORT_IDS
+        parser, cur_gen = current["parser"], current["gen"]
         try:
-            state = parser(data, bt=bt) if gen != "ds3" else parser(data)
+            state = parser(data, bt=bt) if cur_gen != "ds3" else parser(data)
         except ValueError:
             return  # short/garbage report, skip a frame rather than crash
         pad.update(state)
@@ -210,8 +209,28 @@ def run_virtual_pad(name, gen, info):
 
     print("Ready! This controller now works as an Xbox controller in any game.")
     print("Press Ctrl+C here to stop.\n")
+
+    dev = hid_reader.open_controller(info)
+    if gen == "ds3":
+        hid_reader.enable_ds3(dev)
+
     try:
-        hid_reader.read_loop(dev, on_report, lambda: running)
+        while True:
+            # max_consecutive_errors: a dead handle (unplugged, or a
+            # Bluetooth pad gone out of range/asleep) never recovers on its
+            # own - give up on THIS handle after ~12s of failures and go
+            # find a fresh one, instead of retrying it forever (see
+            # hid_reader.read_loop's docstring).
+            hid_reader.read_loop(dev, on_report, lambda: True, max_consecutive_errors=25)
+            dev.close()
+            print("\n\nController disconnected (unplugged, out of Bluetooth "
+                  "range, or asleep) — waiting to reconnect...")
+            name, gen, info = _wait_for_controller()
+            current["parser"], current["gen"] = PARSERS[gen], gen
+            print(f"Reconnected: {name}")
+            dev = hid_reader.open_controller(info)
+            if gen == "ds3":
+                hid_reader.enable_ds3(dev)
     except KeyboardInterrupt:
         pass
     finally:

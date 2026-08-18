@@ -96,6 +96,63 @@ def test_enable_ds3_swallows_exceptions():
     hid_reader.enable_ds3(fake_dev)  # must not raise
 
 
+class _AlwaysFailingDevice:
+    def read(self, size, timeout_ms=200):
+        raise OSError("device is gone")
+
+
+class _FlakyThenGoodDevice:
+    """Fails a few times, then reads succeed - must NOT trip
+    max_consecutive_errors, since the counter should reset on any success."""
+
+    def __init__(self, fail_times, then_reports):
+        self._fails_left = fail_times
+        self._reports = list(then_reports)
+
+    def read(self, size, timeout_ms=200):
+        if self._fails_left > 0:
+            self._fails_left -= 1
+            raise OSError("transient hiccup")
+        if self._reports:
+            return list(self._reports.pop(0))
+        raise KeyboardInterrupt  # deterministic stop once drained
+
+
+def test_read_loop_gives_up_after_max_consecutive_errors():
+    """Regression test: a dead HID handle (unplugged, or a Bluetooth pad
+    gone out of range/asleep) never recovers on its own, so read_loop must
+    stop retrying and return (not hang forever) once told a limit - letting
+    the caller (main.py) reopen a fresh device instead of spinning on a
+    handle that will never work again."""
+    dev = _AlwaysFailingDevice()
+    calls = []
+    hid_reader.time.sleep = lambda s: calls.append(s)  # skip real sleeping in the test
+    try:
+        hid_reader.read_loop(dev, lambda data: None, lambda: True, max_consecutive_errors=5)
+    finally:
+        import time as _time
+        hid_reader.time.sleep = _time.sleep
+    # 4 retry sleeps (after errors 1-4), then error 5 hits the cap and
+    # returns immediately without a 5th sleep.
+    assert len(calls) == 4, f"expected exactly 4 retry sleeps before giving up, got {len(calls)}"
+
+
+def test_read_loop_resets_error_count_on_any_successful_read():
+    dev = _FlakyThenGoodDevice(fail_times=3, then_reports=[bytes([0x01, 0x02])] * 3)
+    hid_reader.time.sleep = lambda s: None
+    reports_seen = []
+    try:
+        try:
+            hid_reader.read_loop(dev, lambda data: reports_seen.append(data), lambda: True,
+                                  max_consecutive_errors=4)
+        except KeyboardInterrupt:
+            pass  # _FlakyThenGoodDevice's deterministic "queue drained" stop
+    finally:
+        import time as _time
+        hid_reader.time.sleep = _time.sleep
+    assert len(reports_seen) == 3, "3 failures then 3 good reads should not hit a 4-error cap"
+
+
 if __name__ == "__main__":
     fails = 0
     tests = [(k, v) for k, v in sorted(globals().items()) if k.startswith("test_")]
