@@ -35,6 +35,30 @@ def _axis_to_unit(byte_val: int) -> float:
     return (byte_val - 128) / 128.0
 
 
+def _decode_ds_buttons(b_shapes: int, b_shoulders: int, b_ps: int) -> tuple:
+    """DS4 and DS5 use the identical bit layout for their 3 button bytes
+    (confirmed against the Linux kernel's hid-playstation.c driver and the
+    nondebug/dualsense report layout docs) — only the byte *offsets* feeding
+    into this differ between the two. Returns (dpad_hat, buttons_dict)."""
+    buttons = {
+        "square": bool(b_shapes & 0x10),
+        "cross": bool(b_shapes & 0x20),
+        "circle": bool(b_shapes & 0x40),
+        "triangle": bool(b_shapes & 0x80),
+        "l1": bool(b_shoulders & 0x01),
+        "r1": bool(b_shoulders & 0x02),
+        "l2_digital": bool(b_shoulders & 0x04),
+        "r2_digital": bool(b_shoulders & 0x08),
+        "share": bool(b_shoulders & 0x10),
+        "options": bool(b_shoulders & 0x20),
+        "l3": bool(b_shoulders & 0x40),
+        "r3": bool(b_shoulders & 0x80),
+        "ps": bool(b_ps & 0x01),
+        "touchpad": bool(b_ps & 0x02),
+    }
+    return b_shapes & 0x0F, buttons
+
+
 def parse_ds4(report: bytes, bt: bool = False) -> ControllerState:
     """DualShock 4. USB: report ID 0x01, data starts at byte 1.
     Bluetooth: report ID 0x11, data starts 2 bytes later (byte 3)."""
@@ -42,40 +66,55 @@ def parse_ds4(report: bytes, bt: bool = False) -> ControllerState:
     if len(report) < off + 9:
         raise ValueError(f"DS4 report too short: {len(report)} bytes (bt={bt})")
 
-    b5, b6, b7 = report[off + 4], report[off + 5], report[off + 6]
+    dpad, buttons = _decode_ds_buttons(report[off + 4], report[off + 5], report[off + 6])
     s = ControllerState(
         left_stick=(_axis_to_unit(report[off]), _axis_to_unit(report[off + 1])),
         right_stick=(_axis_to_unit(report[off + 2]), _axis_to_unit(report[off + 3])),
         l2=report[off + 7] / 255.0,
         r2=report[off + 8] / 255.0,
-        dpad=b5 & 0x0F,
+        dpad=dpad,
     )
-    s.buttons = {
-        "square": bool(b5 & 0x10),
-        "cross": bool(b5 & 0x20),
-        "circle": bool(b5 & 0x40),
-        "triangle": bool(b5 & 0x80),
-        "l1": bool(b6 & 0x01),
-        "r1": bool(b6 & 0x02),
-        "l2_digital": bool(b6 & 0x04),
-        "r2_digital": bool(b6 & 0x08),
-        "share": bool(b6 & 0x10),
-        "options": bool(b6 & 0x20),
-        "l3": bool(b6 & 0x40),
-        "r3": bool(b6 & 0x80),
-        "ps": bool(b7 & 0x01),
-        "touchpad": bool(b7 & 0x02),
-    }
+    s.buttons = buttons
     return s
 
 
 def parse_ds5(report: bytes, bt: bool = False) -> ControllerState:
-    """DualSense (PS5). Same core layout as DS4 (sticks/triggers/buttons);
-    adds a mute button. USB report ID 0x01, Bluetooth report ID 0x31."""
-    state = parse_ds4(report, bt=bt)
+    """DualSense (PS5). NOT the same byte layout as DS4, despite sharing the
+    same button *bit* masks (see _decode_ds_buttons) — Sony inserted the
+    analog L2/R2 trigger bytes and a sequence-number byte between the sticks
+    and the buttons, so on DS5 the buttons start 3 bytes later than on DS4:
+
+        DS4: [sticks 4B][buttons0/1/2][L2][R2]
+        DS5: [sticks 4B][L2][R2][seq#][buttons0/1/2]
+
+    Confirmed against the Linux kernel's hid-playstation.c driver (DS_BUTTONS0/
+    1/2 bit masks) and the nondebug/dualsense USB report layout docs. An
+    earlier version of this function called parse_ds4() directly on DS5
+    reports, which silently misread every button and trigger on real
+    DualSense hardware (buttons read stick-trigger pressure and a rolling
+    counter instead of actual button state) — see git history.
+
+    USB report ID 0x01, Bluetooth report ID 0x31. The Bluetooth *base* offset
+    below reuses DS4's (report ID + 2-byte header); unlike the USB layout
+    above, that specific number has NOT been independently confirmed for DS5's
+    0x31 report — if BT DualSense buttons read wrong, check this first with
+    `main.py --raw`.
+    """
     off = 3 if bt else 1
-    state.buttons["mute"] = bool(report[off + 6] & 0x04)
-    return state
+    if len(report) < off + 10:
+        raise ValueError(f"DS5 report too short: {len(report)} bytes (bt={bt})")
+
+    dpad, buttons = _decode_ds_buttons(report[off + 7], report[off + 8], report[off + 9])
+    s = ControllerState(
+        left_stick=(_axis_to_unit(report[off]), _axis_to_unit(report[off + 1])),
+        right_stick=(_axis_to_unit(report[off + 2]), _axis_to_unit(report[off + 3])),
+        l2=report[off + 4] / 255.0,
+        r2=report[off + 5] / 255.0,
+        dpad=dpad,
+    )
+    s.buttons = buttons
+    s.buttons["mute"] = bool(report[off + 9] & 0x04)
+    return s
 
 
 def parse_ds3(report: bytes) -> ControllerState:

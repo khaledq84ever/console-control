@@ -4,3 +4,4 @@ build/
 dist/
 *.spec
 .venv/
+ds5_report_log_*.txt

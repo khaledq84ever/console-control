@@ -9,6 +9,7 @@ Usage:
     ConsoleControl.exe --list          list detected controllers and exit
 """
 import argparse
+import datetime
 import sys
 import time
 
@@ -22,6 +23,40 @@ BT_REPORT_IDS = {0x11, 0x31}
 
 def _transport_label(report_id: int) -> str:
     return "Bluetooth" if report_id in BT_REPORT_IDS else "USB cable"
+
+
+def _open_ds5_report_log():
+    """DS5's byte layout was wrong for a long time and its Bluetooth offset
+    is still unverified against real hardware (see controller_parsers.py's
+    parse_ds5 docstring) — so every DS5 connection logs its raw report bytes
+    to a timestamped file, regardless of --raw/normal mode, giving something
+    concrete to check parser offsets against without needing --raw run
+    separately. One line per distinct report, deduped like --raw's own
+    on-screen output."""
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = f"ds5_report_log_{ts}.txt"
+    f = open(path, "w", encoding="utf-8")
+    f.write(f"# Console Control DS5 raw HID report log — started {datetime.datetime.now().isoformat()}\n")
+    f.write("# columns: <seconds since start> <report id, hex> <full report, hex bytes>\n")
+    f.flush()
+    return path, f
+
+
+def _make_ds5_logger(log_file):
+    start = time.monotonic()
+    last = None
+
+    def log_report(data: bytes):
+        nonlocal last
+        if data == last:
+            return
+        last = data
+        elapsed = time.monotonic() - start
+        hex_bytes = " ".join(f"{b:02x}" for b in data)
+        log_file.write(f"{elapsed:8.3f} {data[0]:#04x} {hex_bytes}\n")
+        log_file.flush()
+
+    return log_report
 
 
 def cmd_list() -> int:
@@ -54,6 +89,11 @@ def run_raw(name, gen, info):
     if gen == "ds3":
         hid_reader.enable_ds3(dev)
 
+    log_path, log_file = (_open_ds5_report_log() if gen == "ds5" else (None, None))
+    if log_path:
+        print(f"Logging raw DS5 reports to {log_path}\n")
+    log_report = _make_ds5_logger(log_file) if log_file else None
+
     last = None
     running = True
 
@@ -62,6 +102,8 @@ def run_raw(name, gen, info):
         if data != last:
             print(" ".join(f"{b:02x}" for b in data))
             last = data
+        if log_report:
+            log_report(data)
 
     try:
         hid_reader.read_loop(dev, on_report, lambda: running)
@@ -69,6 +111,8 @@ def run_raw(name, gen, info):
         pass
     finally:
         dev.close()
+        if log_file:
+            log_file.close()
         print("\nStopped.")
 
 
@@ -89,11 +133,18 @@ def run_virtual_pad(name, gen, info):
     if gen == "ds3":
         hid_reader.enable_ds3(dev)
 
+    log_path, log_file = (_open_ds5_report_log() if gen == "ds5" else (None, None))
+    if log_path:
+        print(f"Logging raw DS5 reports to {log_path} (for verifying the parser)")
+    log_report = _make_ds5_logger(log_file) if log_file else None
+
     parser = PARSERS[gen]
     running = True
     last_status_time = [0.0]
 
     def on_report(data: bytes):
+        if log_report:
+            log_report(data)
         report_id = data[0]
         bt = report_id in BT_REPORT_IDS
         try:
@@ -118,6 +169,8 @@ def run_virtual_pad(name, gen, info):
     finally:
         pad.close()
         dev.close()
+        if log_file:
+            log_file.close()
         print("\nStopped.")
     return 0
 

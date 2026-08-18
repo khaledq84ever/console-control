@@ -103,23 +103,108 @@ def test_ds4_too_short_raises():
         pass
 
 
-def test_ds5_reuses_ds4_layout_plus_mute():
-    r = bytearray(_ds4_usb_report(cross=True))
-    r[7] |= 0x04  # mute bit
+def _ds5_usb_report(lx=128, ly=128, rx=128, ry=128, l2=0, r2=0,
+                     dpad=8, square=False, cross=False, circle=False, triangle=False,
+                     l1=False, r1=False, share=False, options=False,
+                     l3=False, r3=False, ps=False, touchpad=False, mute=False):
+    """DS5's real layout: L2/R2 analog + a sequence byte sit BETWEEN the
+    sticks and the buttons (unlike DS4, where buttons come first) — see
+    parse_ds5's docstring in controller_parsers.py."""
+    report = bytearray(11)
+    report[0] = 0x01
+    report[1], report[2], report[3], report[4] = lx, ly, rx, ry
+    report[5], report[6] = l2, r2
+    report[7] = 0  # sequence-number byte, irrelevant to parsing
+    b8 = (dpad & 0x0F)
+    b8 |= (0x10 if square else 0) | (0x20 if cross else 0)
+    b8 |= (0x40 if circle else 0) | (0x80 if triangle else 0)
+    b9 = (0x01 if l1 else 0) | (0x02 if r1 else 0)
+    b9 |= (0x10 if share else 0) | (0x20 if options else 0)
+    b9 |= (0x40 if l3 else 0) | (0x80 if r3 else 0)
+    b10 = (0x01 if ps else 0) | (0x02 if touchpad else 0) | (0x04 if mute else 0)
+    report[8], report[9], report[10] = b8, b9, b10
+    return bytes(report)
+
+
+def test_ds5_sticks_and_triggers():
+    r = _ds5_usb_report(lx=255, ry=255, l2=128, r2=255)
+    s = parse_ds5(r)
+    assert s.left_stick[0] > 0.9
+    assert s.right_stick[1] > 0.9
+    assert 0.49 < s.l2 < 0.51
+    assert s.r2 == 1.0
+
+
+def test_ds5_face_and_shoulder_buttons():
+    r = _ds5_usb_report(cross=True, triangle=True, l1=True, r3=True)
+    s = parse_ds5(r)
+    assert s.buttons["cross"] is True
+    assert s.buttons["triangle"] is True
+    assert s.buttons["circle"] is False
+    assert s.buttons["l1"] is True
+    assert s.buttons["r3"] is True
+    assert s.buttons["l3"] is False
+
+
+def test_ds5_dpad():
+    s = parse_ds5(_ds5_usb_report(dpad=6))
+    assert s.dpad == 6
+
+
+def test_ds5_ps_touchpad_and_mute_are_independent():
+    r = _ds5_usb_report(ps=True)
+    s = parse_ds5(r)
+    assert s.buttons["ps"] is True
+    assert s.buttons["touchpad"] is False
+    assert s.buttons["mute"] is False
+
+
+def test_ds5_mute():
+    r = bytearray(_ds5_usb_report(cross=True))
     s = parse_ds5(bytes(r))
     assert s.buttons["cross"] is True
-    assert s.buttons["mute"] is True
+    assert s.buttons["mute"] is False
+
+    r2 = _ds5_usb_report(cross=True, mute=True)
+    s2 = parse_ds5(r2)
+    assert s2.buttons["cross"] is True
+    assert s2.buttons["mute"] is True
 
 
-def test_ds5_mute_over_bluetooth():
-    usb = _ds4_usb_report(cross=True)
+def test_ds5_l2_r2_dont_alias_buttons():
+    """Regression test: an earlier version of parse_ds5 reused parse_ds4's
+    byte offsets, so a pulled L2/R2 trigger (bytes 5/6) was misread as a
+    buttons0 bitmask (dpad+face buttons), and the real buttons0/1/2 bytes
+    (8/9/10) were misread as L2/R2 analog values. A near-max L2 pull used to
+    spuriously fire face buttons; here it must not touch any button."""
+    r = _ds5_usb_report(l2=255, r2=255)
+    s = parse_ds5(r)
+    assert s.l2 == 1.0
+    assert s.r2 == 1.0
+    assert not any(s.buttons.values())
+    assert s.dpad == 8  # released, not derived from the trigger byte
+
+
+def test_ds5_bluetooth_offset_shift():
+    """Same logical data, shifted 2 bytes for the BT report header (same
+    base-offset convention as DS4; see parse_ds5's docstring for the caveat
+    that this specific number is unverified for DS5's real 0x31 report)."""
+    usb = _ds5_usb_report(cross=True, mute=True, lx=200)
     bt = bytearray(len(usb) + 2)
     bt[0] = 0x31
     bt[3:3 + (len(usb) - 1)] = usb[1:]
-    bt[3 + 6] |= 0x04  # mute bit, same offset math as parse_ds5/parse_ds4 with bt=True
     s = parse_ds5(bytes(bt), bt=True)
     assert s.buttons["cross"] is True
     assert s.buttons["mute"] is True
+    assert s.left_stick[0] > 0.5
+
+
+def test_ds5_too_short_raises():
+    try:
+        parse_ds5(bytes([0x01, 0x80]))
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
 
 
 def _ds3_report(lx=128, ly=128, rx=128, ry=128, cross=False, square=False,

@@ -143,6 +143,40 @@ def _build_ds4_like_report(rng: random.Random, bt: bool) -> tuple[bytes, dict]:
     return bytes(report), expected
 
 
+def _build_ds5_report(rng: random.Random, bt: bool) -> tuple[bytes, dict]:
+    """Independently encodes a DS5-shaped USB or Bluetooth report from the
+    layout documented in controller_parsers.py's parse_ds5 docstring — NOT
+    the DS4 layout. DS5 puts L2/R2 analog + a sequence byte between the
+    sticks and the buttons, so buttons start 3 bytes later than on DS4.
+    (An earlier version of this fuzz test called _build_ds4_like_report for
+    DS5 too, making the DS5 cases tautological against the same bug that was
+    in parse_ds5 at the time — see git history.)"""
+    lx, ly, rx, ry = (rng.randint(0, 255) for _ in range(4))
+    l2, r2 = rng.randint(0, 255), rng.randint(0, 255)
+    dpad = rng.randint(0, 8)
+    flags = {name: rng.random() < 0.5 for name in _DS4_FLAG_NAMES}
+    mute = rng.random() < 0.5
+
+    off = 3 if bt else 1
+    report = bytearray(off + 10)
+    report[0] = 0x31 if bt else 0x01
+    report[off], report[off + 1], report[off + 2], report[off + 3] = lx, ly, rx, ry
+    report[off + 4], report[off + 5] = l2, r2
+    report[off + 6] = rng.randint(0, 255)  # sequence byte, must not affect decoding
+    b8 = dpad & 0x0F
+    b8 |= (0x10 if flags["square"] else 0) | (0x20 if flags["cross"] else 0)
+    b8 |= (0x40 if flags["circle"] else 0) | (0x80 if flags["triangle"] else 0)
+    b9 = (0x01 if flags["l1"] else 0) | (0x02 if flags["r1"] else 0)
+    b9 |= (0x10 if flags["share"] else 0) | (0x20 if flags["options"] else 0)
+    b9 |= (0x40 if flags["l3"] else 0) | (0x80 if flags["r3"] else 0)
+    b10 = (0x01 if flags["ps"] else 0) | (0x02 if flags["touchpad"] else 0) | (0x04 if mute else 0)
+    report[off + 7], report[off + 8], report[off + 9] = b8, b9, b10
+
+    expected = dict(flags)
+    expected.update(dpad=dpad, lx=lx, ly=ly, rx=rx, ry=ry, l2=l2, r2=r2, mute=mute)
+    return bytes(report), expected
+
+
 def _build_ds3_report(rng: random.Random) -> tuple[bytes, dict]:
     """Independently encodes a DS3-shaped report from the SIXAXIS layout
     documented in controller_parsers.py's parse_ds3 docstring/comments."""
@@ -228,7 +262,7 @@ def _build_100_cases(rng: random.Random) -> list:
     for _ in range(25):
         cases.append(("ds4", *_build_ds4_like_report(rng, bt=True)))
     for _ in range(20):
-        cases.append(("ds5", *_build_ds4_like_report(rng, bt=rng.random() < 0.5)))
+        cases.append(("ds5", *_build_ds5_report(rng, bt=rng.random() < 0.5)))
     for _ in range(20):
         cases.append(("ds3", *_build_ds3_report(rng)))
     return cases
