@@ -3,10 +3,11 @@ REM One-time setup for ConsoleControl — installs everything it needs:
 REM   1. ViGEmBus — free, open-source Windows driver that lets this app
 REM      present your PS controller to games as a normal Xbox controller.
 REM      https://github.com/nefarius/ViGEmBus (official signed installer)
-REM   2. .NET Desktop Runtime (latest LTS) — NOT required by ConsoleControl
-REM      itself (it's plain Python/PyInstaller), included only in case
-REM      something else on your machine needs it. Safe to let this step run;
-REM      skip it by answering "n" if you don't want it.
+REM   2. .NET Runtime, ASP.NET Core Runtime, .NET Desktop Runtime (latest
+REM      LTS) — NOT required by ConsoleControl itself (it's plain
+REM      Python/PyInstaller), installed anyway in case something else on
+REM      your machine needs one of them. Set SKIP_DOTNET=1 before running
+REM      this script if you don't want them.
 REM Both installers are official, signed, and pulled straight from their
 REM real publishers — nothing unverified gets downloaded here.
 
@@ -38,18 +39,27 @@ if %errorlevel% == 0 (
 )
 
 echo.
-echo [2/2] .NET Desktop Runtime (optional, not needed by ConsoleControl itself)
-set /p DOTNET_ANSWER="  Install it too? [y/N] "
-if /i "%DOTNET_ANSWER%"=="y" (
+echo [2/2] .NET runtimes (not needed by ConsoleControl itself, installed anyway
+echo       in case something else on your machine needs them)
+if "%SKIP_DOTNET%"=="1" (
+    echo   SKIP_DOTNET=1 set, skipping.
+) else (
     echo   Downloading Microsoft's official .NET install script...
     powershell -Command "Invoke-WebRequest -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile '%TEMP%\dotnet-install.ps1'"
-    if exist "%TEMP%\dotnet-install.ps1" (
-        powershell -ExecutionPolicy Bypass -File "%TEMP%\dotnet-install.ps1" -Channel LTS -Runtime windowsdesktop
-    ) else (
+    if not exist "%TEMP%\dotnet-install.ps1" (
         echo   Download failed. Get it manually from https://dotnet.microsoft.com/download
+    ) else (
+        REM All 3 latest-LTS runtime families Microsoft ships standalone:
+        REM the base .NET runtime, ASP.NET Core (web apps/APIs), and Windows
+        REM Desktop (WPF/WinForms apps) — covers whatever else on the machine
+        REM might ask for one of these, not just ConsoleControl's own needs.
+        echo   Installing .NET Runtime...
+        powershell -ExecutionPolicy Bypass -File "%TEMP%\dotnet-install.ps1" -Channel LTS -Runtime dotnet
+        echo   Installing ASP.NET Core Runtime...
+        powershell -ExecutionPolicy Bypass -File "%TEMP%\dotnet-install.ps1" -Channel LTS -Runtime aspnetcore
+        echo   Installing .NET Desktop Runtime...
+        powershell -ExecutionPolicy Bypass -File "%TEMP%\dotnet-install.ps1" -Channel LTS -Runtime windowsdesktop
     )
-) else (
-    echo   Skipped.
 )
 
 echo.

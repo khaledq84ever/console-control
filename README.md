@@ -13,9 +13,11 @@ sidesteps games that don't natively support PlayStation pads.
 1. **Run setup once**: double-click `install_setup.bat`. It installs
    [ViGEmBus](https://github.com/nefarius/ViGEmBus) (required — the official
    signed installer, you'll get the normal Windows driver-install
-   confirmation prompt), and offers to install the latest .NET Desktop
-   Runtime too (optional — ConsoleControl.exe itself doesn't need .NET,
-   this is only in case something else on your machine does).
+   confirmation prompt), then installs the latest LTS .NET Runtime, ASP.NET
+   Core Runtime, and .NET Desktop Runtime (ConsoleControl.exe itself doesn't
+   need any of these — it's plain Python/PyInstaller — they're installed in
+   case something else on your machine does; set `SKIP_DOTNET=1` before
+   running the script to skip this part).
 2. **Connect your controller**:
    - USB: plug the cable in.
    - Bluetooth: pair it first in Windows Settings → Bluetooth & devices
