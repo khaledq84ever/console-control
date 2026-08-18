@@ -112,11 +112,13 @@ def test_ds5_reuses_ds4_layout_plus_mute():
 
 
 def _ds3_report(lx=128, ly=128, rx=128, ry=128, cross=False, square=False,
-                 select=False, start=False, ps=False):
+                 select=False, start=False, l3=False, ps=False,
+                 l2_digital=False, r2_digital=False):
     report = bytearray(20)
     report[0] = 0x01
-    b2 = (0x01 if select else 0) | (0x08 if start else 0)
-    b3 = (0x40 if cross else 0) | (0x80 if square else 0)
+    b2 = (0x01 if select else 0) | (0x02 if l3 else 0) | (0x08 if start else 0)
+    b3 = (0x01 if l2_digital else 0) | (0x02 if r2_digital else 0)
+    b3 |= (0x40 if cross else 0) | (0x80 if square else 0)
     b4 = 0x01 if ps else 0
     report[2], report[3], report[4] = b2, b3, b4
     report[6], report[7], report[8], report[9] = lx, ly, rx, ry
@@ -138,6 +140,26 @@ def test_ds3_start_and_ps():
     assert s.buttons["options"] is True  # start
     assert s.buttons["ps"] is True
     assert s.buttons["touchpad"] is False
+
+
+def test_ds3_l2_r2_digital_are_independent_of_select_and_l3():
+    """Regression test: l2_digital/r2_digital must read byte 3 (their own
+    bits), not byte 2 where select/l3 live - a prior version of parse_ds3
+    aliased l2_digital to select and r2_digital to l3, so pressing Select
+    or clicking the left stick would falsely report L2/R2 as pressed."""
+    r = _ds3_report(select=True, l3=True)
+    s = parse_ds3(r)
+    assert s.buttons["share"] is True
+    assert s.buttons["l3"] is True
+    assert s.buttons["l2_digital"] is False
+    assert s.buttons["r2_digital"] is False
+
+    r = _ds3_report(l2_digital=True, r2_digital=True)
+    s = parse_ds3(r)
+    assert s.buttons["l2_digital"] is True
+    assert s.buttons["r2_digital"] is True
+    assert s.buttons["share"] is False
+    assert s.buttons["l3"] is False
 
 
 if __name__ == "__main__":

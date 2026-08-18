@@ -104,8 +104,8 @@ def parse_ds3(report: bytes) -> ControllerState:
         "triangle": bool(b3 & 0x10),
         "l1": bool(b3 & 0x04),
         "r1": bool(b3 & 0x08),
-        "l2_digital": bool(b2 & 0x01),
-        "r2_digital": bool(b2 & 0x02),
+        "l2_digital": bool(b3 & 0x01),
+        "r2_digital": bool(b3 & 0x02),
         "share": bool(b2 & 0x01),    # Select
         "options": bool(b2 & 0x08),  # Start
         "l3": bool(b2 & 0x02),
