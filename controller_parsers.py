@@ -90,8 +90,8 @@ def parse_ds3(report: bytes) -> ControllerState:
     s = ControllerState(
         left_stick=(_axis_to_unit(report[6]), _axis_to_unit(report[7])),
         right_stick=(_axis_to_unit(report[8]), _axis_to_unit(report[9])),
-        l2=(report[18] / 255.0) if len(report) > 18 else float(bool(b2 & 0x01)),
-        r2=(report[19] / 255.0) if len(report) > 19 else float(bool(b2 & 0x02)),
+        l2=(report[18] / 255.0) if len(report) > 18 else float(bool(b3 & 0x01)),
+        r2=(report[19] / 255.0) if len(report) > 19 else float(bool(b3 & 0x02)),
     )
     dpad_up, dpad_right, dpad_down, dpad_left = (
         bool(b2 & 0x10), bool(b2 & 0x20), bool(b2 & 0x40), bool(b2 & 0x80),
@@ -104,8 +104,8 @@ def parse_ds3(report: bytes) -> ControllerState:
         "triangle": bool(b3 & 0x10),
         "l1": bool(b3 & 0x04),
         "r1": bool(b3 & 0x08),
-        "l2_digital": bool(b2 & 0x01),
-        "r2_digital": bool(b2 & 0x02),
+        "l2_digital": bool(b3 & 0x01),
+        "r2_digital": bool(b3 & 0x02),
         "share": bool(b2 & 0x01),    # Select
         "options": bool(b2 & 0x08),  # Start
         "l3": bool(b2 & 0x02),

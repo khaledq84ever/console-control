@@ -13,6 +13,11 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# hid_reader imports the real `hid` package at module load time; stub it out
+# so this runs on machines without hidapi installed too (e.g. this Linux dev
+# box) - the fake HID device below never touches the real thing anyway.
+sys.modules.setdefault("hid", MagicMock())
+
 import hid_reader
 import main
 
