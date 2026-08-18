@@ -214,6 +214,19 @@ def test_garbage_short_report_skipped_not_crashed():
     assert "A" in pressed, "should still process the valid report after skipping the garbage one"
 
 
+def test_run_demo_decodes_every_scripted_frame_with_no_errors(capsys):
+    """--demo mode (main.run_demo) needs no real hardware, hidapi, or
+    ViGEmBus - it just runs demo_controller.py's scripted reports through
+    the real parser. Regression coverage for the DS5 fix: the "must NOT
+    fire any button" trigger frame is asserted here too."""
+    for gen in ("ds3", "ds4", "ds5"):
+        code = main.run_demo(gen)
+        assert code == 0
+        out = capsys.readouterr().out
+        assert "ERROR" not in out, f"{gen} demo hit a parser error:\n{out}"
+        assert "decoded with no parser errors" in out
+
+
 def test_cli_main_catches_unexpected_exceptions_from_main(capsys):
     """Regression test: hid_reader.read_loop only wraps dev.read() in
     try/except, not the on_report callback (parser -> pad.update()), so an

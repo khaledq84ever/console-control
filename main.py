@@ -7,13 +7,23 @@ Usage:
                                         HID bytes as they change (wiring test
                                         / used to fix a wrong button mapping)
     ConsoleControl.exe --list          list detected controllers and exit
+    ConsoleControl.exe --demo [GEN]    run a scripted simulated controller
+                                        (ds3/ds4/ds5, default ds4) through the
+                                        real parser - no real controller,
+                                        hidapi, or ViGEmBus needed. For
+                                        sanity-checking the parsing pipeline
+                                        in environments with no hardware
+                                        attached.
+
+`hid_reader` (needs hidapi installed) is imported lazily inside the
+functions that need real hardware, not at module load time, so --demo works
+even where hidapi/vgamepad can't be installed at all.
 """
 import argparse
 import datetime
 import sys
 import time
 
-import hid_reader
 from controller_parsers import parse_ds3, parse_ds4, parse_ds5
 
 PARSERS = {"ds3": parse_ds3, "ds4": parse_ds4, "ds5": parse_ds5}
@@ -59,7 +69,42 @@ def _make_ds5_logger(log_file):
     return log_report
 
 
+def run_demo(gen: str) -> int:
+    """Feeds a scripted sequence of synthetic reports for `gen` through the
+    real parser (controller_parsers.parse_ds3/4/5) - no real controller,
+    hidapi, or ViGEmBus involved. Proves the parsing/dispatch code runs
+    end-to-end without a physical device attached; does NOT prove the byte
+    offsets match real hardware (see README's honesty note)."""
+    import demo_controller
+
+    print(f"=== DEMO MODE: simulated {gen.upper()} controller ===")
+    print("(no real hardware, hidapi, or ViGEmBus involved - just the parser)\n")
+
+    parser = PARSERS[gen]
+    for label, report in demo_controller.scripted_reports(gen):
+        bt = report[0] in BT_REPORT_IDS
+        try:
+            state = parser(report, bt=bt) if gen != "ds3" else parser(report)
+        except ValueError as exc:
+            print(f"{label:45} ERROR: {exc}")
+            continue
+        pressed = [b for b, v in state.buttons.items() if v]
+        print(f"{label:45} dpad={state.dpad} L2={state.l2:.2f} R2={state.r2:.2f} "
+              f"LS=({state.left_stick[0]:+.2f},{state.left_stick[1]:+.2f}) "
+              f"RS=({state.right_stick[0]:+.2f},{state.right_stick[1]:+.2f}) "
+              f"pressed={pressed}")
+        time.sleep(0.05)
+
+    print(f"\nDemo complete: {len(demo_controller.scripted_reports(gen))} frames decoded "
+          "with no parser errors.")
+    print("This proves the pipeline runs end-to-end - it does NOT prove the byte")
+    print("offsets match real hardware. Only `main.py --raw` with a real controller")
+    print("plugged in (on Windows) can prove that.")
+    return 0
+
+
 def cmd_list() -> int:
+    import hid_reader  # deferred (see module docstring / --demo)
     found = hid_reader.list_controllers()
     if not found:
         print("No PlayStation controller detected.")
@@ -73,6 +118,7 @@ def cmd_list() -> int:
 
 
 def _wait_for_controller(poll_seconds=2.0):
+    import hid_reader  # deferred (see module docstring / --demo)
     print("Waiting for a PlayStation controller (USB or Bluetooth)...")
     print("  Plug it in with a cable, or pair it in Windows Settings > Bluetooth.")
     while True:
@@ -83,6 +129,7 @@ def _wait_for_controller(poll_seconds=2.0):
 
 
 def run_raw(name, gen, info):
+    import hid_reader  # deferred (see module docstring / --demo)
     print(f"Connected: {name} — raw mode (no virtual pad, just printing report bytes)")
     print("Press buttons / move sticks to see which bytes change. Ctrl+C to stop.\n")
     dev = hid_reader.open_controller(info)
@@ -117,6 +164,7 @@ def run_raw(name, gen, info):
 
 
 def run_virtual_pad(name, gen, info):
+    import hid_reader  # deferred (see module docstring / --demo)
     import virtual_pad  # imported lazily: needs ViGEmBus/vgamepad only in this mode
 
     print(f"Connected: {name}")
@@ -179,12 +227,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="PS3/PS4/PS5 controller driver for PC")
     ap.add_argument("--raw", action="store_true", help="print raw HID bytes instead of driving a virtual pad")
     ap.add_argument("--list", action="store_true", help="list connected controllers and exit")
+    ap.add_argument("--demo", metavar="GEN", nargs="?", const="ds4", choices=("ds3", "ds4", "ds5"),
+                     help="run a scripted simulated controller (ds3/ds4/ds5, default ds4) through the "
+                          "real parser - no real controller, hidapi, or ViGEmBus needed")
     args = ap.parse_args()
 
     print("=== Console Control — PlayStation controller driver ===\n")
 
     if args.list:
         return cmd_list()
+
+    if args.demo:
+        return run_demo(args.demo)
 
     name, gen, info = _wait_for_controller()
     if args.raw:
